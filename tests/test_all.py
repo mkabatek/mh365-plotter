@@ -191,3 +191,57 @@ def test_real_files_if_available():
         assert polys, f
         plan = build_plan(polys, Profile(rotate=90))
         assert not [w for w in plan.warnings if "EXCEEDS" in w], f
+
+
+# ---------------------------------------------------------------- completion
+class _FakeArgs:
+    def __init__(self, **kw):
+        self.no_wait = False
+        self.wait_timeout = 900.0
+        self.probe_timeout = 3.0
+        self.drain_seconds = 0.2
+        self.__dict__.update(kw)
+
+
+class _FakeTransport:
+    """Stands in for a cutter that never answers output queries."""
+
+    def __init__(self, replies=""):
+        self.replies = replies
+        self.waited = False
+
+    def query(self, cmd, timeout=3.0):
+        return self.replies
+
+    def wait_idle(self, timeout=900.0):
+        self.waited = True
+        return bool(self.replies)
+
+
+def test_silent_cutter_does_not_block_on_oa():
+    """Regression: a unit that answers nothing used to hang until --wait-timeout
+    (30 min by default) at the 'waiting for the cutter to finish' step."""
+    import time as _t
+    from mh365.cli import finish
+    tr = _FakeTransport(replies="")          # silent machine
+    t0 = _t.time()
+    finish(tr, None, _FakeArgs(wait_timeout=600.0), answers=False)
+    assert _t.time() - t0 < 5.0
+    assert not tr.waited                     # must not use the barrier
+
+
+def test_answering_cutter_uses_the_barrier():
+    from mh365.cli import finish
+    tr = _FakeTransport(replies="0,0")
+    finish(tr, None, _FakeArgs(), answers=True)
+    assert tr.waited
+
+
+def test_no_wait_returns_immediately():
+    import time as _t
+    from mh365.cli import finish
+    tr = _FakeTransport(replies="")
+    t0 = _t.time()
+    finish(tr, None, _FakeArgs(no_wait=True, drain_seconds=30.0), answers=False)
+    assert _t.time() - t0 < 0.5
+    assert not tr.waited

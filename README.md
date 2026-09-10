@@ -177,6 +177,8 @@ Flags work before or after the subcommand.
 | `--speed N`, `--force N` | HPGL `VS`/`FS`; usually ignored, see below |
 | `--min-length N` | drop paths shorter than N mm |
 | `--no-order` | keep the file's own path order |
+| `--no-wait` | send and exit without waiting for completion |
+| `--drain-seconds N` | fallback wait for units that don't answer queries (default 15) |
 | `--yes` | skip the confirmation prompt |
 | `--force-fit` | cut even if the design exceeds the machine |
 
@@ -214,10 +216,14 @@ Flags work before or after the subcommand.
    fraction of a loop.
 5. **HPGL.** `IN;DF;PA;SP1;` then `PU`/`PD` in plotter units, with `PD` chunked
    to 16 coordinate pairs per command to stay inside the machine's buffer.
-6. **Send.** Hardware flow control by default, chunked writes, then an `OA;`
-   barrier — the cutter answers it only after executing everything queued
-   before it, which is what tells us the job is genuinely finished. Closing the
-   port early truncates the cut.
+6. **Send.** Hardware flow control by default, chunked writes, then a wait for
+   completion. `OA;` is answered only after everything queued before it has
+   executed, which makes it an exact barrier — but only on units that implement
+   HPGL output commands, and many MH-series machines answer nothing at all. So
+   the unit is probed first (`--probe-timeout`), and silent machines get a
+   short timed drain instead (`--drain-seconds`). The drain is short by design:
+   flow control means the write only returns once the cutter has accepted every
+   byte, so what remains to execute is at most one buffer.
 
 ## Known unknowns
 
@@ -257,6 +263,12 @@ Use either node; if a cut stalls, try the other with `--port`.
   depth and that the blade spins freely.
 - **Thick vinyl** — `--passes 2` rather than more blade force.
 - **"Refusing to cut"** — the design exceeds the machine. Try `--rotate 90`.
+- **Sits at "waiting for the cutter to finish"** — your unit doesn't answer HPGL
+  output queries, so completion can't be confirmed directly. Recent versions
+  detect this and fall back to a timed drain. Confirm with `mh365 identify`: if
+  every query returns `(no reply)`, that's the cause. Once the head has stopped,
+  the cut is done and Ctrl-C is safe — it only sends knife-up and abort-graphics.
+  Use `--no-wait` to skip waiting altogether.
 
 ## Development
 

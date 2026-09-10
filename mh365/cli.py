@@ -107,6 +107,43 @@ def plan_from_file(path: str, args, p: Profile):
     return plan, info
 
 
+def finish(tr, plan, args, answers: bool) -> None:
+    """Wait for the machine to finish, by whatever means it actually supports.
+
+    `OA;` is answered only after everything queued before it has executed, which
+    makes it an exact completion barrier - but only on units that implement HPGL
+    output commands. Plenty of MH-series machines answer nothing at all, and
+    blocking on a reply that will never arrive just hangs until the timeout.
+    So: probe first, and fall back to a timed drain.
+
+    The fallback is short by design. Flow control means write() only returns
+    once the cutter has accepted every byte, so what is left to execute is at
+    most one buffer - seconds, not minutes.
+    """
+    if args.no_wait:
+        print("  sent. Not waiting (--no-wait); let the head stop before unloading.")
+        return
+    if answers:
+        print("  waiting for the cutter to finish (OA; barrier)...")
+        if tr.wait_idle(timeout=args.wait_timeout):
+            print("  cutter reports idle.")
+        else:
+            print("  no reply within --wait-timeout; the cut may still be running. "
+                  "Watch the head.", file=sys.stderr)
+        return
+    n = max(0.0, args.drain_seconds)
+    print(f"  this unit does not answer HPGL output queries, so completion cannot")
+    print(f"  be confirmed directly. All bytes are accepted; draining {n:.0f}s...")
+    step = 0.5
+    waited = 0.0
+    while waited < n:
+        time.sleep(min(step, n - waited))
+        waited += step
+        print(f"\r  draining        : {n - min(waited, n):4.1f}s ", end="", flush=True)
+    print("\r  drained. If the head is still moving it is working from its own "
+          "buffer;\n  that is normal - wait for it to stop.        ")
+
+
 def send(plan, p: Profile, args, park=(0.0, 0.0)) -> None:
     w = HpglWriter(p.units_per_mm, speed=p.speed, force=p.force)
     text = program_text(w.program(plan.polys, passes=p.passes, park=park))
@@ -117,18 +154,19 @@ def send(plan, p: Profile, args, park=(0.0, 0.0)) -> None:
     tr = SerialTransport(port, baud=p.baud, flow=p.flow, chunk=args.chunk, pace=args.pace)
     try:
         with tr:
+            answers = False
+            if not args.no_wait:
+                answers = bool(tr.query("OA;", timeout=args.probe_timeout))
+
             def prog(sent, total):
                 pct = 100.0 * sent / max(total, 1)
-                print(f"\r  sending        : {pct:5.1f}%  ({sent}/{total} bytes)", end="", flush=True)
+                print(f"\r  sending        : {pct:5.1f}%  ({sent}/{total} bytes)",
+                      end="", flush=True)
+
             tr.write(text, progress=prog)
             print()
-            print("  waiting for the cutter to finish (OA; barrier)...")
-            if tr.wait_idle(timeout=args.wait_timeout):
-                print(f"  done in {time.time()-t0:.0f} s")
-            else:
-                print("  no reply to OA; within timeout - the cut may still be "
-                      "running. Leave the port alone until the head stops.",
-                      file=sys.stderr)
+            finish(tr, plan, args, answers)
+            print(f"  elapsed {time.time()-t0:.0f} s")
     except KeyboardInterrupt:
         tr.abort()
         tr.close()
@@ -164,7 +202,7 @@ def cmd_identify(args) -> None:
             if cmd.startswith("\x1b"):
                 tr.write(cmd)
                 continue
-            r = tr.query(cmd, timeout=args.wait_timeout if args.wait_timeout < 10 else 4.0)
+            r = tr.query(cmd, timeout=args.probe_timeout)
             print(f"  {cmd:<5} {what:<18} -> {r!r}" if r else
                   f"  {cmd:<5} {what:<18} -> (no reply)")
     print("\nA model string from OI; confirms HPGL. Many MH-series units answer "
@@ -251,8 +289,12 @@ def cmd_home(args) -> None:
         sys.exit("Cancelled.")
     port = resolve_port(args)
     with SerialTransport(port, baud=p.baud, flow=p.flow) as tr:
+        answers = bool(tr.query("OA;", timeout=args.probe_timeout))
         tr.write("\x1b.(IN;PA;SP1;PU0,0;SP0;")
-        tr.wait_idle(timeout=120.0)
+        if answers:
+            tr.wait_idle(timeout=120.0)
+        else:
+            time.sleep(min(5.0, max(0.0, args.drain_seconds)))
     print("Sent.")
 
 
@@ -276,7 +318,8 @@ DEFAULTS = dict(
     swap_axes=False, no_flip_y=False, margin_mm=None, overcut_mm=None, passes=None,
     speed=None, force=None, tolerance=0.05, layer=None, min_length=0.0,
     no_order=False, no_optimize_start=False, est_cut_mm_s=None, est_travel_mm_s=None,
-    chunk=64, pace=0.0, wait_timeout=1800.0, yes=False, force_fit=False,
+    chunk=64, pace=0.0, wait_timeout=900.0, probe_timeout=3.0,
+    drain_seconds=15.0, no_wait=False, yes=False, force_fit=False,
 )
 
 S = argparse.SUPPRESS
@@ -310,7 +353,14 @@ def add_common(ap: argparse.ArgumentParser) -> None:
     g.add_argument("--est-travel-mm-s", type=float, dest="est_travel_mm_s", default=S)
     g.add_argument("--chunk", type=int, default=S, help="serial write chunk bytes")
     g.add_argument("--pace", type=float, default=S, help="seconds between chunks")
-    g.add_argument("--wait-timeout", type=float, default=S)
+    g.add_argument("--wait-timeout", type=float, default=S,
+                   help="max wait for an OA; completion reply (units that answer)")
+    g.add_argument("--probe-timeout", type=float, default=S,
+                   help="how long to test whether the unit answers queries at all")
+    g.add_argument("--drain-seconds", type=float, default=S,
+                   help="fallback wait after sending, for units that stay silent")
+    g.add_argument("--no-wait", action="store_true", default=S,
+                   help="send and exit without waiting")
     g.add_argument("--yes", action="store_true", default=S, help="skip confirmation")
     g.add_argument("--force-fit", action="store_true", default=S,
                    help="cut even if the design exceeds the machine limits")
