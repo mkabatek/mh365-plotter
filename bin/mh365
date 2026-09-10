@@ -1,4 +1,5 @@
 #!/bin/sh
-# Wrapper that uses the project venv.
+# Wrapper: runs the CLI inside the project venv, from any working directory.
 HERE=$(cd "$(dirname "$0")/.." && pwd)
-exec "$HERE/.venv/bin/python" -m mh365 "$@"
+exec env PYTHONPATH="$HERE${PYTHONPATH:+:$PYTHONPATH}" \
+     "$HERE/.venv/bin/python" -m mh365 "$@"
