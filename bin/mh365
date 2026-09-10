@@ -1,0 +1,4 @@
+#!/bin/sh
+# Wrapper that uses the project venv.
+HERE=$(cd "$(dirname "$0")/.." && pwd)
+exec "$HERE/.venv/bin/python" -m mh365 "$@"
