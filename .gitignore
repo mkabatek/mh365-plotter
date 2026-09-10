@@ -4,3 +4,4 @@ __pycache__/
 *.plt
 *_toolpath.svg
 .pytest_cache/
+.DS_Store
