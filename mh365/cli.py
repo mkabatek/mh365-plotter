@@ -21,7 +21,7 @@ DEFAULT_PROFILE = os.path.expanduser("~/.config/mh365/profile.json")
 # ---------------------------------------------------------------- helpers
 def load_profile(args) -> Profile:
     p = Profile.load(args.profile) if (args.profile and os.path.exists(args.profile)) else Profile()
-    for k in ("rotate", "margin_mm", "overcut_mm", "passes", "speed", "force",
+    for k in ("rotate", "scale", "margin_mm", "overcut_mm", "passes", "speed", "force",
               "units_per_inch", "width_mm", "max_length_mm", "baud", "flow",
               "est_cut_mm_s", "est_travel_mm_s"):
         v = getattr(args, k, None)
@@ -87,6 +87,8 @@ def describe(plan, p: Profile) -> None:
     carriage = plan.width_mm if p.swap_axes else plan.height_mm
     print(f"  across carriage: {carriage:.1f} mm of {p.width_mm:.1f} mm available")
     print(f"  cut length     : {plan.cut_mm/1000:.2f} m   travel {plan.travel_mm/1000:.2f} m")
+    if abs(p.scale - 1.0) > 1e-9:
+        print(f"  scale          : {p.scale:.4g}  ({p.scale*100:.4g}% of the artwork)")
     print(f"  passes         : {p.passes}   overcut {p.overcut_mm} mm")
     print(f"  estimated time : {plan.seconds/60:.1f} min (at {p.est_cut_mm_s:.0f} mm/s, estimate only)")
     for w in plan.warnings:
@@ -315,7 +317,7 @@ def cmd_profile(args) -> None:
 DEFAULTS = dict(
     profile=DEFAULT_PROFILE, port=None, baud=None, flow=None, units_per_inch=None,
     width_mm=None, max_length_mm=None, rotate=None, mirror_x=False, mirror_y=False,
-    swap_axes=False, no_flip_y=False, margin_mm=None, overcut_mm=None, passes=None,
+    swap_axes=False, no_flip_y=False, scale=None, margin_mm=None, overcut_mm=None, passes=None,
     speed=None, force=None, tolerance=0.05, layer=None, min_length=0.0,
     no_order=False, no_optimize_start=False, est_cut_mm_s=None, est_travel_mm_s=None,
     chunk=64, pace=0.0, wait_timeout=900.0, probe_timeout=3.0,
@@ -335,6 +337,8 @@ def add_common(ap: argparse.ArgumentParser) -> None:
     g.add_argument("--width-mm", type=float, dest="width_mm", default=S, help="usable cut width")
     g.add_argument("--max-length-mm", type=float, dest="max_length_mm", default=S)
     g.add_argument("--rotate", type=int, choices=[0, 90, 180, 270], default=S)
+    g.add_argument("--scale", type=float, default=S,
+                   help="uniform artwork scale; 0.95 cuts at 95%% of size")
     g.add_argument("--mirror-x", action="store_true", default=S)
     g.add_argument("--mirror-y", action="store_true", default=S)
     g.add_argument("--swap-axes", action="store_true", default=S)

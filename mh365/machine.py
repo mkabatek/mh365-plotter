@@ -29,6 +29,7 @@ class Profile:
     mirror_y: bool = False
     flip_y: bool = True              # SVG y-down -> machine y-up
     swap_axes: bool = False          # if the carriage turns out to be X
+    scale: float = 1.0               # uniform artwork scale, 0.95 = 95%
     margin_mm: float = 5.0
     # cutting
     overcut_mm: float = 0.5
@@ -61,7 +62,12 @@ def to_machine(polys: list[Polyline], p: Profile) -> list[Polyline]:
     th = math.radians(r)
     c, s = round(math.cos(th)), round(math.sin(th))
 
+    k = float(p.scale)
+    if k <= 0:
+        raise ValueError("scale must be > 0")
+
     def fn(x, y):
+        x, y = x * k, y * k
         X, Y = x * c - y * s, x * s + y * c
         if p.flip_y:
             Y = -Y

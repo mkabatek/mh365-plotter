@@ -147,8 +147,12 @@ Weed, paint, peel, let it cure, then:
 mh365 cut --rotate 90 layer2.svg
 ```
 
-Don't change `--rotate`, `--margin-mm` or `--swap-axes` between layers or they
-won't line up.
+Don't change `--rotate`, `--scale`, `--margin-mm` or `--swap-axes` between
+layers or they won't line up.
+
+`--scale` affects the artwork only — the margin and the overcut stay in real
+millimetres, since those are properties of the machine and the blade rather
+than of the drawing.
 
 A single multi-layer SVG works too. Layers labelled *guide*, *do not cut* or
 *registration* are skipped automatically, and one layer can be selected by label:
@@ -164,6 +168,7 @@ Flags work before or after the subcommand.
 | Flag | Why |
 |---|---|
 | `--rotate {0,90,180,270}` | run the long axis along the media feed |
+| `--scale N` | uniform artwork scale; `0.95` cuts at 95% of size |
 | `--overcut-mm N` | raise if closed loops aren't quite severing (default 0.5) |
 | `--passes N` | thick vinyl — better than more blade force |
 | `--margin-mm N` | shift the job off the media edge (default 5) |

@@ -245,3 +245,22 @@ def test_no_wait_returns_immediately():
     finish(tr, None, _FakeArgs(no_wait=True, drain_seconds=30.0), answers=False)
     assert _t.time() - t0 < 0.5
     assert not tr.waited
+
+
+def test_scale_shrinks_artwork_but_not_the_margin():
+    """--scale is an artwork property; margin and overcut are physical."""
+    src = [Polyline([(0, 0), (100, 0), (100, 40), (0, 40)], closed=True)]
+    full = bbox_of(to_machine(src, Profile(margin_mm=5.0, scale=1.0)))
+    half = bbox_of(to_machine(src, Profile(margin_mm=5.0, scale=0.5)))
+    assert math.isclose(full[2] - full[0], 100.0, abs_tol=1e-6)
+    assert math.isclose(half[2] - half[0], 50.0, abs_tol=1e-6)
+    assert math.isclose(half[3] - half[1], 20.0, abs_tol=1e-6)
+    assert math.isclose(half[0], 5.0, abs_tol=1e-6)   # margin unscaled
+
+
+def test_scale_must_be_positive():
+    try:
+        to_machine([Polyline([(0, 0), (1, 1)])], Profile(scale=0.0))
+    except ValueError:
+        return
+    raise AssertionError("scale <= 0 must be rejected")
